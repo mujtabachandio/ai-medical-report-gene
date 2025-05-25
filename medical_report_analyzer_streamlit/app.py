@@ -350,11 +350,14 @@ uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 if os.path.exists('/usr/bin/tesseract'):
     pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-# Extract text from image using Tesseract with fallback options
+# Extract text from image using Tesseract with enhanced preprocessing
 def extract_text_from_image(image):
     try:
         # Convert PIL Image to numpy array
         img_array = np.array(image)
+        
+        # Debug information
+        st.write(f"Image shape: {img_array.shape}")
         
         # Convert to grayscale
         if len(img_array.shape) == 3:
@@ -362,33 +365,71 @@ def extract_text_from_image(image):
         else:
             gray = img_array
         
-        # Try different preprocessing methods
+        # Enhanced preprocessing methods
         methods = [
-            lambda img: img,  # Original image
+            # Original grayscale
+            lambda img: img,
+            
+            # Adaptive thresholding
             lambda img: cv2.adaptiveThreshold(
-                cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if len(img.shape) == 3 else img,
+                img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY, 11, 2
+            ),
+            
+            # Otsu's thresholding
+            lambda img: cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
+            
+            # Denoising + Adaptive thresholding
+            lambda img: cv2.adaptiveThreshold(
+                cv2.fastNlMeansDenoising(img), 255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            ),
+            
+            # Contrast enhancement + Adaptive thresholding
+            lambda img: cv2.adaptiveThreshold(
+                cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(img),
                 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-            ),  # Adaptive thresholding
-            lambda img: cv2.threshold(
-                cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if len(img.shape) == 3 else img,
-                0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )[1],  # Otsu's thresholding
+            ),
+            
+            # Dilation + Erosion
+            lambda img: cv2.dilate(
+                cv2.erode(img, np.ones((2,2), np.uint8)),
+                np.ones((2,2), np.uint8)
+            ),
         ]
         
         best_text = ""
-        for method in methods:
+        best_method = 0
+        
+        # Try each preprocessing method
+        for i, method in enumerate(methods):
             try:
-                processed_img = method(img_array)
-                text = pytesseract.image_to_string(processed_img)
-                if len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-            except Exception:
+                processed_img = method(gray)
+                
+                # Show processed image for debugging
+                st.image(processed_img, caption=f"Method {i+1} processed image", use_column_width=True)
+                
+                # Try different OCR configurations
+                configs = [
+                    '--oem 3 --psm 6',  # Assume uniform block of text
+                    '--oem 3 --psm 4',  # Assume single column of text
+                    '--oem 3 --psm 3',  # Fully automatic page segmentation
+                ]
+                
+                for config in configs:
+                    text = pytesseract.image_to_string(processed_img, config=config)
+                    if len(text.strip()) > len(best_text.strip()):
+                        best_text = text
+                        best_method = i
+            except Exception as e:
+                st.write(f"Method {i+1} failed: {str(e)}")
                 continue
         
         if not best_text.strip():
             st.warning("No text could be extracted. Please ensure the image is clear and readable.")
             return ""
-            
+        
+        st.success(f"Best results obtained with method {best_method + 1}")
         return best_text.strip()
         
     except Exception as e:
