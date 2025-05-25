@@ -1,0 +1,17 @@
+COMPLETE BLOOD COUNT (CBC)
+Date: 01-MAR-2024
+Lab No: TEST123
+
+Test Name: Value Unit [Reference Range]
+Hemoglobin: 14.2 g/dL [12-16]
+RBC: 5.2 x10^9/L [4.5-5.5]
+HCT: 42% [36-48]
+WBC: 7.5 x10^9/L [4-11]
+Platelets: 250 x10^9/L [150-450]
+Neutrophils: 65% [40-75]
+Lymphocytes: 25% [20-45]
+Monocytes: 7% [2-10]
+Eosinophils: 2% [0-5]
+Basophils: 1% [0-2]
+
+Remarks: Normal CBC results. All parameters within reference range. 
