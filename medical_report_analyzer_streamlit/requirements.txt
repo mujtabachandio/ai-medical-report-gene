@@ -10,4 +10,5 @@ python-dotenv==1.0.0
 reportlab==4.0.9  # For PDF generation
 PyMuPDF==1.23.8  # Added for PDF processing
 pandas==2.1.4    # Added for data manipulation
-plotly==5.18.0   # Added for visualizations 
+plotly==5.18.0   # Added for visualizations
+fpdf==1.7.2      # Added for PDF generation 
