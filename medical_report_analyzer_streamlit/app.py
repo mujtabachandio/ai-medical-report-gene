@@ -3,7 +3,6 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-import pytesseract
 import os
 from PIL import Image
 import numpy as np
@@ -350,7 +349,7 @@ uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 if os.path.exists('/usr/bin/tesseract'):
     pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-# Extract text from image using Tesseract with enhanced preprocessing
+# Extract text from image using Google Cloud Vision
 def extract_text_from_image(image):
     try:
         # Convert PIL Image to numpy array
@@ -359,65 +358,42 @@ def extract_text_from_image(image):
         # Debug information
         st.write(f"Image shape: {img_array.shape}")
         
-        # Convert to grayscale
+        # Convert to grayscale for display
         if len(img_array.shape) == 3:
             gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
         else:
             gray = img_array
         
-        # Basic preprocessing
-        # Resize if image is too large
-        max_dimension = 2000
-        if max(gray.shape) > max_dimension:
-            scale = max_dimension / max(gray.shape)
-            gray = cv2.resize(gray, None, fx=scale, fy=scale)
+        # Show original grayscale image
+        st.image(gray, caption="Processed Image", use_column_width=True)
         
-        # Apply basic preprocessing
-        # 1. Denoise
-        denoised = cv2.fastNlMeansDenoising(gray)
+        # Convert PIL Image to bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
         
-        # 2. Increase contrast
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(denoised)
+        # Initialize Google Cloud Vision client
+        client = vision.ImageAnnotatorClient()
         
-        # 3. Binarization
-        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Create image object
+        image = vision.Image(content=img_byte_arr)
         
-        # Show processed images
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(enhanced, caption="Enhanced Image", use_column_width=True)
-        with col2:
-            st.image(binary, caption="Binary Image", use_column_width=True)
+        # Perform text detection
+        response = client.text_detection(image=image)
+        texts = response.text_annotations
         
-        # Try OCR with different configurations
-        configs = [
-            '--oem 3 --psm 6',  # Assume uniform block of text
-            '--oem 3 --psm 4',  # Assume single column of text
-            '--oem 3 --psm 3',  # Fully automatic page segmentation
-        ]
+        if texts:
+            # Get the full text
+            text = texts[0].description
+            
+            # Show detected text for debugging
+            st.write("Detected text:")
+            st.code(text)
+            
+            return text.strip()
         
-        best_text = ""
-        for config in configs:
-            try:
-                # Try with enhanced image
-                text = pytesseract.image_to_string(enhanced, config=config)
-                if len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-                
-                # Try with binary image
-                text = pytesseract.image_to_string(binary, config=config)
-                if len(text.strip()) > len(best_text.strip()):
-                    best_text = text
-            except Exception as e:
-                st.write(f"OCR failed with config {config}: {str(e)}")
-                continue
-        
-        if not best_text.strip():
-            st.warning("No text could be extracted. Please ensure the image is clear and readable.")
-            return ""
-        
-        return best_text.strip()
+        st.warning("No text could be extracted. Please ensure the image is clear and readable.")
+        return ""
         
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
