@@ -1,6 +1,6 @@
 streamlit==1.31.1
 opencv-python-headless==4.8.1.78
-pytesseract==0.3.10
+google-cloud-vision==3.4.4  # Replacing pytesseract with Google Cloud Vision
 pypdf2==3.0.1
 pdf2image==1.16.3
 numpy==1.26.2

@@ -16,6 +16,8 @@ import base64
 import google.generativeai as genai
 from dotenv import load_dotenv
 from datetime import datetime
+import io
+from google.cloud import vision
 
 # Set page config
 st.set_page_config(page_title="Medical Report AI Assistant", layout="wide")
@@ -436,46 +438,28 @@ def preprocess_image(img):
     
     return enhanced
 
-# Extract text from image using Tesseract
+# Replace the extract_text_from_image function
 def extract_text_from_image(image):
     try:
-        # Preprocess the image
-        preprocessed = preprocess_image(image)
+        # Convert PIL Image to bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        # Initialize Google Cloud Vision client
+        client = vision.ImageAnnotatorClient()
         
-        # Custom configuration for better accuracy
-        custom_config = r'--oem 3 --psm 6'
+        # Create image object
+        image = vision.Image(content=img_byte_arr)
         
-        # Extract text
-        text = pytesseract.image_to_string(preprocessed, config=custom_config)
+        # Perform text detection
+        response = client.text_detection(image=image)
+        texts = response.text_annotations
         
-        # Clean up the text
-        text = text.replace('\n\n', '\n')  # Remove double newlines
-        text = re.sub(r'\s+', ' ', text)   # Normalize whitespace
-        text = text.strip()                # Remove leading/trailing whitespace
+        if texts:
+            return texts[0].description
+        return ""
         
-        # Split text into lines
-        lines = []
-        current_line = ""
-        
-        # Split by common delimiters and test names
-        parts = re.split(r'(HEMOGLOBIN|RBC COUNT|BLOOD INDICES|WBC COUNT|DIFFERENTIAL WBC COUNT|PLATELET COUNT|Mean Corpuscular Volume|MCH|MCHC|RDW|Neutrophils|Lymphocytes|Eosinophils|Monocytes|Basophils)', text)
-        
-        for part in parts:
-            if part.strip():
-                if re.match(r'HEMOGLOBIN|RBC COUNT|BLOOD INDICES|WBC COUNT|DIFFERENTIAL WBC COUNT|PLATELET COUNT|Mean Corpuscular Volume|MCH|MCHC|RDW|Neutrophils|Lymphocytes|Eosinophils|Monocytes|Basophils', part):
-                    if current_line:
-                        lines.append(current_line.strip())
-                    current_line = part
-                else:
-                    current_line += " " + part
-        
-        if current_line:
-            lines.append(current_line.strip())
-        
-        # Join lines back together
-        text = '\n'.join(lines)
-        
-        return text
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
         return ""
