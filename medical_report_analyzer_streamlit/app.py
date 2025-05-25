@@ -3,7 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-import pytesseract
+from tesserocr import PyTessBaseAPI
 import os
 from PIL import Image
 import numpy as np
@@ -346,9 +346,10 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Configure Tesseract path for Streamlit Cloud
-if os.path.exists('/usr/bin/tesseract'):
-    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+# Initialize Tesseract API
+@st.cache_resource
+def get_tesseract_api():
+    return PyTessBaseAPI()
 
 # Extract text from image using Tesseract with enhanced preprocessing
 def extract_text_from_image(image):
@@ -401,6 +402,9 @@ def extract_text_from_image(image):
         best_text = ""
         best_method = 0
         
+        # Get Tesseract API
+        api = get_tesseract_api()
+        
         # Try each preprocessing method
         for i, method in enumerate(methods):
             try:
@@ -408,6 +412,12 @@ def extract_text_from_image(image):
                 
                 # Show processed image for debugging
                 st.image(processed_img, caption=f"Method {i+1} processed image", use_column_width=True)
+                
+                # Convert to PIL Image
+                pil_img = Image.fromarray(processed_img)
+                
+                # Set image in API
+                api.SetImage(pil_img)
                 
                 # Try different OCR configurations
                 configs = [
@@ -417,7 +427,10 @@ def extract_text_from_image(image):
                 ]
                 
                 for config in configs:
-                    text = pytesseract.image_to_string(processed_img, config=config)
+                    api.SetVariable('tessedit_ocr_engine_mode', '3')  # Use LSTM only
+                    api.SetVariable('tessedit_pageseg_mode', config.split()[3])  # Set PSM mode
+                    text = api.GetUTF8Text()
+                    
                     if len(text.strip()) > len(best_text.strip()):
                         best_text = text
                         best_method = i
@@ -435,6 +448,10 @@ def extract_text_from_image(image):
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
         return ""
+    finally:
+        # Clean up Tesseract API
+        if 'api' in locals():
+            api.End()
 
 # Extract images from PDF (high DPI for better quality)
 @st.cache_data

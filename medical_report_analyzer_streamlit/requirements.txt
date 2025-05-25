@@ -11,4 +11,5 @@ python-dotenv==1.0.0
 reportlab==4.0.9
 pandas==2.1.4
 plotly==5.18.0
-fpdf==1.7.2 
+fpdf==1.7.2
+tesserocr==2.5.2 
