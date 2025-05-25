@@ -3,7 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-import easyocr
+from paddleocr import PaddleOCR
 import os
 from PIL import Image
 import numpy as np
@@ -346,12 +346,12 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Initialize EasyOCR reader
+# Initialize PaddleOCR
 @st.cache_resource
-def get_ocr_reader():
-    return easyocr.Reader(['en'])
+def get_ocr():
+    return PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
 
-# Extract text from image using EasyOCR
+# Extract text from image using PaddleOCR
 def extract_text_from_image(image):
     try:
         # Convert PIL Image to numpy array
@@ -376,19 +376,19 @@ def extract_text_from_image(image):
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         enhanced = clahe.apply(gray)
         
-        # Get OCR reader
-        reader = get_ocr_reader()
+        # Get OCR
+        ocr = get_ocr()
         
-        # Extract text using EasyOCR
-        results = reader.readtext(enhanced)
+        # Extract text using PaddleOCR
+        results = ocr.ocr(enhanced, cls=True)
         
         # Combine all detected text
-        text = ' '.join([result[1] for result in results])
+        text = ' '.join([line[1][0] for result in results for line in result])
         
         if not text.strip():
             # Try with original image if enhanced version fails
-            results = reader.readtext(img_array)
-            text = ' '.join([result[1] for result in results])
+            results = ocr.ocr(img_array, cls=True)
+            text = ' '.join([line[1][0] for result in results for line in result])
         
         return text.strip()
         
