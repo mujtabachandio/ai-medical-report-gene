@@ -3,7 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-from tesserocr import PyTessBaseAPI
+import pytesseract
 import os
 from PIL import Image
 import numpy as np
@@ -346,10 +346,9 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Initialize Tesseract API
-@st.cache_resource
-def get_tesseract_api():
-    return PyTessBaseAPI()
+# Configure Tesseract path for Streamlit Cloud
+if os.path.exists('/usr/bin/tesseract'):
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
 # Extract text from image using Tesseract with enhanced preprocessing
 def extract_text_from_image(image):
@@ -366,92 +365,63 @@ def extract_text_from_image(image):
         else:
             gray = img_array
         
-        # Enhanced preprocessing methods
-        methods = [
-            # Original grayscale
-            lambda img: img,
-            
-            # Adaptive thresholding
-            lambda img: cv2.adaptiveThreshold(
-                img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY, 11, 2
-            ),
-            
-            # Otsu's thresholding
-            lambda img: cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
-            
-            # Denoising + Adaptive thresholding
-            lambda img: cv2.adaptiveThreshold(
-                cv2.fastNlMeansDenoising(img), 255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-            ),
-            
-            # Contrast enhancement + Adaptive thresholding
-            lambda img: cv2.adaptiveThreshold(
-                cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(img),
-                255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-            ),
-            
-            # Dilation + Erosion
-            lambda img: cv2.dilate(
-                cv2.erode(img, np.ones((2,2), np.uint8)),
-                np.ones((2,2), np.uint8)
-            ),
+        # Basic preprocessing
+        # Resize if image is too large
+        max_dimension = 2000
+        if max(gray.shape) > max_dimension:
+            scale = max_dimension / max(gray.shape)
+            gray = cv2.resize(gray, None, fx=scale, fy=scale)
+        
+        # Apply basic preprocessing
+        # 1. Denoise
+        denoised = cv2.fastNlMeansDenoising(gray)
+        
+        # 2. Increase contrast
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(denoised)
+        
+        # 3. Binarization
+        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Show processed images
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(enhanced, caption="Enhanced Image", use_column_width=True)
+        with col2:
+            st.image(binary, caption="Binary Image", use_column_width=True)
+        
+        # Try OCR with different configurations
+        configs = [
+            '--oem 3 --psm 6',  # Assume uniform block of text
+            '--oem 3 --psm 4',  # Assume single column of text
+            '--oem 3 --psm 3',  # Fully automatic page segmentation
         ]
         
         best_text = ""
-        best_method = 0
-        
-        # Get Tesseract API
-        api = get_tesseract_api()
-        
-        # Try each preprocessing method
-        for i, method in enumerate(methods):
+        for config in configs:
             try:
-                processed_img = method(gray)
+                # Try with enhanced image
+                text = pytesseract.image_to_string(enhanced, config=config)
+                if len(text.strip()) > len(best_text.strip()):
+                    best_text = text
                 
-                # Show processed image for debugging
-                st.image(processed_img, caption=f"Method {i+1} processed image", use_column_width=True)
-                
-                # Convert to PIL Image
-                pil_img = Image.fromarray(processed_img)
-                
-                # Set image in API
-                api.SetImage(pil_img)
-                
-                # Try different OCR configurations
-                configs = [
-                    '--oem 3 --psm 6',  # Assume uniform block of text
-                    '--oem 3 --psm 4',  # Assume single column of text
-                    '--oem 3 --psm 3',  # Fully automatic page segmentation
-                ]
-                
-                for config in configs:
-                    api.SetVariable('tessedit_ocr_engine_mode', '3')  # Use LSTM only
-                    api.SetVariable('tessedit_pageseg_mode', config.split()[3])  # Set PSM mode
-                    text = api.GetUTF8Text()
-                    
-                    if len(text.strip()) > len(best_text.strip()):
-                        best_text = text
-                        best_method = i
+                # Try with binary image
+                text = pytesseract.image_to_string(binary, config=config)
+                if len(text.strip()) > len(best_text.strip()):
+                    best_text = text
             except Exception as e:
-                st.write(f"Method {i+1} failed: {str(e)}")
+                st.write(f"OCR failed with config {config}: {str(e)}")
                 continue
         
         if not best_text.strip():
             st.warning("No text could be extracted. Please ensure the image is clear and readable.")
             return ""
         
-        st.success(f"Best results obtained with method {best_method + 1}")
         return best_text.strip()
         
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
         return ""
-    finally:
-        # Clean up Tesseract API
-        if 'api' in locals():
-            api.End()
 
 # Extract images from PDF (high DPI for better quality)
 @st.cache_data
