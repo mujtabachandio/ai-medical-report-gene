@@ -1,7 +1,5 @@
 tesseract-ocr
-tesseract-ocr-eng
+tesseract-ocr-eng       # English (default, but safe to include)
 tesseract-ocr-urd       # Urdu (if needed)
 tesseract-ocr-ara       # Arabic
-libtesseract-dev
-libleptonica-dev
     

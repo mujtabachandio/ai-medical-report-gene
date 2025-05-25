@@ -3,6 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
+import pytesseract
 import os
 from PIL import Image
 import numpy as np
@@ -15,40 +16,12 @@ import base64
 import google.generativeai as genai
 from dotenv import load_dotenv
 from datetime import datetime
-import io
-from google.cloud import vision
-import json
 
 # Set page config
 st.set_page_config(page_title="Medical Report AI Assistant", layout="wide")
 
 # Load environment variables
 load_dotenv()
-
-# Configure Google Cloud credentials
-def configure_google_cloud():
-    try:
-        # Get credentials from Streamlit secrets
-        credentials_json = st.secrets["GOOGLE_APPLICATION_CREDENTIALS"]
-        
-        # Create a temporary file for credentials
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
-            json.dump(credentials_json, temp_file)
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
-        
-        return True
-    except Exception as e:
-        st.error(f"""
-        Google Cloud credentials not found. Please follow these steps:
-        1. Go to Google Cloud Console
-        2. Create a service account and download the JSON key
-        3. In Streamlit Cloud, go to your app settings
-        4. Add a new secret with key 'GOOGLE_APPLICATION_CREDENTIALS'
-        5. Paste the entire JSON content as the value
-        6. Restart the app
-        """)
-        st.error(f"Error: {str(e)}")
-        return False
 
 # Add custom CSS 
 st.markdown("""
@@ -319,6 +292,38 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Configure Tesseract path
+def configure_tesseract():
+    # List of possible Tesseract installation paths
+    possible_paths = [
+        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+        r'C:\Tesseract-OCR\tesseract.exe',
+        r'tesseract'  # This will work if tesseract is in PATH
+    ]
+    
+    # Try to find Tesseract
+    tesseract_found = False
+    for path in possible_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            tesseract_found = True
+            break
+    
+    if not tesseract_found:
+        st.error("""
+        Tesseract OCR is not installed or not found. Please follow these steps:
+        1. Download Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
+        2. Install it with default settings
+        3. Make sure to check 'Add to system PATH' during installation
+        4. Restart your computer
+        5. Run this application again
+        """)
+        st.stop()
+
+# Configure Tesseract at startup
+configure_tesseract()
+
 # Configure Gemini API
 def configure_gemini():
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -334,8 +339,13 @@ def configure_gemini():
         st.stop()
     
     try:
+        # Configure the API
         genai.configure(api_key=api_key)
+        
+        # Use gemini-1.5-flash which is optimized for speed and efficiency
         model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Test the API key with a simple prompt
         response = model.generate_content("Hello")
         if response and hasattr(response, 'text'):
             return model
@@ -343,7 +353,35 @@ def configure_gemini():
             st.error("Failed to initialize Gemini model. Please try again.")
             st.stop()
     except Exception as e:
-        st.error(f"Error configuring Gemini API: {str(e)}")
+        if "404" in str(e):
+            st.error("""
+            Model not found. This could be due to:
+            1. API version mismatch
+            2. Model name change
+            3. Regional availability
+            
+            Please try again in a few minutes or check the latest model names at:
+            https://ai.google.dev/gemini-api/docs/models
+            """)
+        elif "429" in str(e):
+            st.error("""
+            Rate limit exceeded. Please wait a few minutes before trying again.
+            The free tier has limits on:
+            - Requests per minute
+            - Requests per day
+            - Input tokens per minute
+            
+            Try these solutions:
+            1. Wait 1-2 minutes before trying again
+            2. Process one test result at a time
+            3. Keep explanations brief
+            """)
+        else:
+            st.error(f"""
+            Error configuring Gemini API: {str(e)}
+            Please check your API key and try again.
+            Make sure you're using the free API key from: https://makersuite.google.com/app/apikey
+            """)
         st.stop()
 
 # Configure Gemini at startup
@@ -371,60 +409,73 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Configure Tesseract path for Streamlit Cloud
-if os.path.exists('/usr/bin/tesseract'):
-    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+# Helper: Preprocess image for OCR
+def preprocess_image(img):
+    # Convert to numpy array if it's a PIL Image
+    if isinstance(img, Image.Image):
+        img = np.array(img)
+    
+    # Convert to grayscale
+    if len(img.shape) == 3:
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img
+    
+    # Apply adaptive thresholding
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 11, 2
+    )
+    
+    # Denoise
+    denoised = cv2.fastNlMeansDenoising(binary)
+    
+    # Increase contrast
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray)
+    
+    return enhanced
 
-# Extract text from image using Google Cloud Vision
+# Extract text from image using Tesseract
 def extract_text_from_image(image):
     try:
-        # Configure Google Cloud credentials
-        if not configure_google_cloud():
-            return ""
+        # Preprocess the image
+        preprocessed = preprocess_image(image)
         
-        # Convert PIL Image to numpy array
-        img_array = np.array(image)
+        # Custom configuration for better accuracy
+        custom_config = r'--oem 3 --psm 6'
         
-        # Debug information
-        st.write(f"Image shape: {img_array.shape}")
+        # Extract text
+        text = pytesseract.image_to_string(preprocessed, config=custom_config)
         
-        # Convert to grayscale for display
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array
+        # Clean up the text
+        text = text.replace('\n\n', '\n')  # Remove double newlines
+        text = re.sub(r'\s+', ' ', text)   # Normalize whitespace
+        text = text.strip()                # Remove leading/trailing whitespace
         
-        # Show original grayscale image
-        st.image(gray, caption="Processed Image", use_column_width=True)
+        # Split text into lines
+        lines = []
+        current_line = ""
         
-        # Convert PIL Image to bytes
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
+        # Split by common delimiters and test names
+        parts = re.split(r'(HEMOGLOBIN|RBC COUNT|BLOOD INDICES|WBC COUNT|DIFFERENTIAL WBC COUNT|PLATELET COUNT|Mean Corpuscular Volume|MCH|MCHC|RDW|Neutrophils|Lymphocytes|Eosinophils|Monocytes|Basophils)', text)
         
-        # Initialize Google Cloud Vision client
-        client = vision.ImageAnnotatorClient()
+        for part in parts:
+            if part.strip():
+                if re.match(r'HEMOGLOBIN|RBC COUNT|BLOOD INDICES|WBC COUNT|DIFFERENTIAL WBC COUNT|PLATELET COUNT|Mean Corpuscular Volume|MCH|MCHC|RDW|Neutrophils|Lymphocytes|Eosinophils|Monocytes|Basophils', part):
+                    if current_line:
+                        lines.append(current_line.strip())
+                    current_line = part
+                else:
+                    current_line += " " + part
         
-        # Create image object
-        image = vision.Image(content=img_byte_arr)
+        if current_line:
+            lines.append(current_line.strip())
         
-        # Perform text detection
-        response = client.text_detection(image=image)
-        texts = response.text_annotations
+        # Join lines back together
+        text = '\n'.join(lines)
         
-        if texts:
-            # Get the full text
-            text = texts[0].description
-            
-            # Show detected text for debugging
-            st.write("Detected text:")
-            st.code(text)
-            
-            return text.strip()
-        
-        st.warning("No text could be extracted. Please ensure the image is clear and readable.")
-        return ""
-        
+        return text
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
         return ""
@@ -834,39 +885,123 @@ Abnormal Results: {abnormal_tests}
 if uploaded_file:
     with st.spinner("Processing your medical report..."):
         if uploaded_file.type == "application/pdf":
-            st.error("PDF processing is temporarily disabled. Please upload an image file.")
+            pages = extract_images_from_pdf(uploaded_file)
         else:
-            # Process image files
-            image = Image.open(uploaded_file)
-            text = extract_text_from_image(image)
+            pages = [Image.open(uploaded_file)]
+
+        full_text = ""
+        for img in pages:
+            # Create a container for the image with custom styling
+            with st.container():
+                st.markdown("""
+                <div style='text-align: center; margin: 1rem 0;'>
+                    <h4 style='color: #4CAF50; margin-bottom: 0.5rem;'>Uploaded Report Preview</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Display image with controlled size
+                st.image(img, use_column_width=True, width=400)
+                
+                # Add a subtle border and shadow
+                st.markdown("""
+                <style>
+                    [data-testid="stImage"] {
+                        border-radius: 10px;
+                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                        margin: 1rem 0;
+                    }
+                </style>
+                """, unsafe_allow_html=True)
             
+            text = extract_text_from_image(img)
             if not text:
                 st.error("No text could be extracted. Please ensure the image is clear and readable.")
                 st.stop()
+            full_text += text + "\n"
+
+        # Parse and display results
+        lab_df = parse_lab_results(full_text)
+        
+        if lab_df.empty:
+            st.warning("""
+            <div class="premium-card">
+                <h3>No Test Results Found</h3>
+                <p>Please ensure:</p>
+                <ul>
+                    <li>The image is clear and readable</li>
+                    <li>The test results are in a standard format</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Display results in a clean, professional format
+            st.markdown("""
+            <div class="premium-card slide-up">
+                <h3><div class="card-icon icon-analysis">📊</div>Test Results Analysis</h3>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # Parse and display results
-            lab_df = parse_lab_results(text)
+            # Style the dataframe
+            def highlight_category(val):
+                if val == "High":
+                    return 'background-color: rgba(245, 101, 101, 0.2); color: #f56565; font-weight: 600;'
+                elif val == "Low":
+                    return 'background-color: rgba(59, 130, 246, 0.2); color: #3b82f6; font-weight: 600;'
+                elif val == "Borderline":
+                    return 'background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; font-weight: 600;'
+                return 'background-color: rgba(16, 185, 129, 0.2); color: #10b981; font-weight: 600;'
             
-            if lab_df.empty:
-                st.warning("No test results found. Please ensure the image is clear and readable.")
-            else:
-                # Display results
-                st.dataframe(lab_df)
-                
-                # Generate explanations and suggestions
-                for idx, row in lab_df.iterrows():
-                    with st.expander(f"{row['Test']} ({row['Category']})"):
-                        explanation = generate_explanation(row['Test'], row['Value'], f"{row['Normal Range']} {row['Unit']}")
-                        suggestion = generate_suggestions(row['Test'], row['Value'])
-                        
-                        st.markdown(f"""
-                        <div class="premium-card">
-                            <h4>Explanation</h4>
-                            <p>{explanation}</p>
-                            <h4>Recommended Actions</h4>
-                            <p>{suggestion}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+            styled_df = lab_df.style.applymap(highlight_category, subset=['Category'])
+            st.dataframe(styled_df, use_container_width=True)
+
+            # Add risk summary
+            st.markdown("""
+            <div class="premium-card slide-up">
+                <h3><div class="card-icon icon-results">🔍</div>Risk Assessment Summary</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            risk_summary = generate_risk_summary(lab_df)
+            st.info(risk_summary)
+
+            # Add explanations in a clean format
+            st.markdown("""
+            <div class="premium-card slide-up">
+                <h3><div class="card-icon icon-analysis">📝</div>Detailed Analysis</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            explanations = []
+            suggestions = []
+
+            for idx, row in lab_df.iterrows():
+                with st.expander(f"{row['Test']} ({row['Category']})"):
+                    explanation = generate_explanation(row['Test'], row['Value'], f"{row['Normal Range']} {row['Unit']}")
+                    suggestion = generate_suggestions(row['Test'], row['Value'])
+                    explanations.append(explanation)
+                    suggestions.append(suggestion)
+
+                    st.markdown(f"""
+                    <div class="premium-card">
+                        <h4>Explanation</h4>
+                        <p>{explanation}</p>
+                        <h4>Recommended Actions</h4>
+                        <p>{suggestion}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # Add export option
+            st.markdown("""
+            <div class="premium-card slide-up">
+                <h3><div class="card-icon icon-export">📄</div>Export Report</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            download_link = generate_pdf_report(lab_df, explanations, suggestions)
+            st.markdown(f"""
+            <div style='text-align: center; margin-top: 1rem;'>
+                {download_link}
+            </div>
+            """, unsafe_allow_html=True)
 
 # Update sidebar with Streamlit native components
 st.sidebar.title("MediScan AI")
