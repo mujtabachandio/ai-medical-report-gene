@@ -294,38 +294,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Configure Tesseract path
-def configure_tesseract():
-    # List of possible Tesseract installation paths
-    possible_paths = [
-        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-        r'C:\Tesseract-OCR\tesseract.exe',
-        r'tesseract'  # This will work if tesseract is in PATH
-    ]
-    
-    # Try to find Tesseract
-    tesseract_found = False
-    for path in possible_paths:
-        if os.path.exists(path):
-            pytesseract.pytesseract.tesseract_cmd = path
-            tesseract_found = True
-            break
-    
-    if not tesseract_found:
-        st.error("""
-        Tesseract OCR is not installed or not found. Please follow these steps:
-        1. Download Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
-        2. Install it with default settings
-        3. Make sure to check 'Add to system PATH' during installation
-        4. Restart your computer
-        5. Run this application again
-        """)
-        st.stop()
-
-# Configure Tesseract at startup
-configure_tesseract()
-
 # Configure Gemini API
 def configure_gemini():
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -341,13 +309,8 @@ def configure_gemini():
         st.stop()
     
     try:
-        # Configure the API
         genai.configure(api_key=api_key)
-        
-        # Use gemini-1.5-flash which is optimized for speed and efficiency
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Test the API key with a simple prompt
         response = model.generate_content("Hello")
         if response and hasattr(response, 'text'):
             return model
@@ -355,35 +318,7 @@ def configure_gemini():
             st.error("Failed to initialize Gemini model. Please try again.")
             st.stop()
     except Exception as e:
-        if "404" in str(e):
-            st.error("""
-            Model not found. This could be due to:
-            1. API version mismatch
-            2. Model name change
-            3. Regional availability
-            
-            Please try again in a few minutes or check the latest model names at:
-            https://ai.google.dev/gemini-api/docs/models
-            """)
-        elif "429" in str(e):
-            st.error("""
-            Rate limit exceeded. Please wait a few minutes before trying again.
-            The free tier has limits on:
-            - Requests per minute
-            - Requests per day
-            - Input tokens per minute
-            
-            Try these solutions:
-            1. Wait 1-2 minutes before trying again
-            2. Process one test result at a time
-            3. Keep explanations brief
-            """)
-        else:
-            st.error(f"""
-            Error configuring Gemini API: {str(e)}
-            Please check your API key and try again.
-            Make sure you're using the free API key from: https://makersuite.google.com/app/apikey
-            """)
+        st.error(f"Error configuring Gemini API: {str(e)}")
         st.stop()
 
 # Configure Gemini at startup
@@ -869,123 +804,39 @@ Abnormal Results: {abnormal_tests}
 if uploaded_file:
     with st.spinner("Processing your medical report..."):
         if uploaded_file.type == "application/pdf":
-            pages = extract_images_from_pdf(uploaded_file)
+            st.error("PDF processing is temporarily disabled. Please upload an image file.")
         else:
-            pages = [Image.open(uploaded_file)]
-
-        full_text = ""
-        for img in pages:
-            # Create a container for the image with custom styling
-            with st.container():
-                st.markdown("""
-                <div style='text-align: center; margin: 1rem 0;'>
-                    <h4 style='color: #4CAF50; margin-bottom: 0.5rem;'>Uploaded Report Preview</h4>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Display image with controlled size
-                st.image(img, use_column_width=True, width=400)
-                
-                # Add a subtle border and shadow
-                st.markdown("""
-                <style>
-                    [data-testid="stImage"] {
-                        border-radius: 10px;
-                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-                        margin: 1rem 0;
-                    }
-                </style>
-                """, unsafe_allow_html=True)
+            # Process image files
+            image = Image.open(uploaded_file)
+            text = extract_text_from_image(image)
             
-            text = extract_text_from_image(img)
             if not text:
                 st.error("No text could be extracted. Please ensure the image is clear and readable.")
                 st.stop()
-            full_text += text + "\n"
-
-        # Parse and display results
-        lab_df = parse_lab_results(full_text)
-        
-        if lab_df.empty:
-            st.warning("""
-            <div class="premium-card">
-                <h3>No Test Results Found</h3>
-                <p>Please ensure:</p>
-                <ul>    
-                    <li>The image is clear and readable</li>
-                    <li>The test results are in a standard format</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Display results in a clean, professional format
-            st.markdown("""
-            <div class="premium-card slide-up">
-                <h3><div class="card-icon icon-analysis">📊</div>Test Results Analysis</h3>
-            </div>
-            """, unsafe_allow_html=True)
             
-            # Style the dataframe
-            def highlight_category(val):
-                if val == "High":
-                    return 'background-color: rgba(245, 101, 101, 0.2); color: #f56565; font-weight: 600;'
-                elif val == "Low":
-                    return 'background-color: rgba(59, 130, 246, 0.2); color: #3b82f6; font-weight: 600;'
-                elif val == "Borderline":
-                    return 'background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; font-weight: 600;'
-                return 'background-color: rgba(16, 185, 129, 0.2); color: #10b981; font-weight: 600;'
+            # Parse and display results
+            lab_df = parse_lab_results(text)
             
-            styled_df = lab_df.style.applymap(highlight_category, subset=['Category'])
-            st.dataframe(styled_df, use_container_width=True)
-
-            # Add risk summary
-            st.markdown("""
-            <div class="premium-card slide-up">
-                <h3><div class="card-icon icon-results">🔍</div>Risk Assessment Summary</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            risk_summary = generate_risk_summary(lab_df)
-            st.info(risk_summary)
-
-            # Add explanations in a clean format
-            st.markdown("""
-            <div class="premium-card slide-up">
-                <h3><div class="card-icon icon-analysis">📝</div>Detailed Analysis</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            explanations = []
-            suggestions = []
-
-            for idx, row in lab_df.iterrows():
-                with st.expander(f"{row['Test']} ({row['Category']})"):
-                    explanation = generate_explanation(row['Test'], row['Value'], f"{row['Normal Range']} {row['Unit']}")
-                    suggestion = generate_suggestions(row['Test'], row['Value'])
-                    explanations.append(explanation)
-                    suggestions.append(suggestion)
-
-                    st.markdown(f"""
-                    <div class="premium-card">
-                        <h4>Explanation</h4>
-                        <p>{explanation}</p>
-                        <h4>Recommended Actions</h4>
-                        <p>{suggestion}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            # Add export option
-            st.markdown("""
-            <div class="premium-card slide-up">
-                <h3><div class="card-icon icon-export">📄</div>Export Report</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            download_link = generate_pdf_report(lab_df, explanations, suggestions)
-            st.markdown(f"""
-            <div style='text-align: center; margin-top: 1rem;'>
-                {download_link}
-            </div>
-            """, unsafe_allow_html=True)
+            if lab_df.empty:
+                st.warning("No test results found. Please ensure the image is clear and readable.")
+            else:
+                # Display results
+                st.dataframe(lab_df)
+                
+                # Generate explanations and suggestions
+                for idx, row in lab_df.iterrows():
+                    with st.expander(f"{row['Test']} ({row['Category']})"):
+                        explanation = generate_explanation(row['Test'], row['Value'], f"{row['Normal Range']} {row['Unit']}")
+                        suggestion = generate_suggestions(row['Test'], row['Value'])
+                        
+                        st.markdown(f"""
+                        <div class="premium-card">
+                            <h4>Explanation</h4>
+                            <p>{explanation}</p>
+                            <h4>Recommended Actions</h4>
+                            <p>{suggestion}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
 
 # Update sidebar with Streamlit native components
 st.sidebar.title("MediScan AI")
