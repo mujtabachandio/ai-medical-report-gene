@@ -3,7 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-import pytesseract
+import easyocr
 import os
 from PIL import Image
 import numpy as np
@@ -346,34 +346,12 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Helper: Preprocess image for OCR
-def preprocess_image(img):
-    # Convert to numpy array if it's a PIL Image
-    if isinstance(img, Image.Image):
-        img = np.array(img)
-    
-    # Convert to grayscale
-    if len(img.shape) == 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = img
-    
-    # Apply adaptive thresholding
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY, 11, 2
-    )
-    
-    # Denoise
-    denoised = cv2.fastNlMeansDenoising(binary)
-    
-    # Increase contrast
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced = clahe.apply(gray)
-    
-    return enhanced
+# Initialize EasyOCR reader
+@st.cache_resource
+def get_ocr_reader():
+    return easyocr.Reader(['en'])
 
-# Extract text from image using Tesseract
+# Extract text from image using EasyOCR
 def extract_text_from_image(image):
     try:
         # Convert PIL Image to numpy array
@@ -398,12 +376,19 @@ def extract_text_from_image(image):
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         enhanced = clahe.apply(gray)
         
-        # Extract text using Tesseract
-        text = pytesseract.image_to_string(enhanced)
+        # Get OCR reader
+        reader = get_ocr_reader()
+        
+        # Extract text using EasyOCR
+        results = reader.readtext(enhanced)
+        
+        # Combine all detected text
+        text = ' '.join([result[1] for result in results])
         
         if not text.strip():
             # Try with original image if enhanced version fails
-            text = pytesseract.image_to_string(image)
+            results = reader.readtext(img_array)
+            text = ' '.join([result[1] for result in results])
         
         return text.strip()
         
