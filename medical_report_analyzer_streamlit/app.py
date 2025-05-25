@@ -373,27 +373,39 @@ def preprocess_image(img):
     
     return enhanced
 
-# Replace the extract_text_from_image function
+# Extract text from image using Tesseract
 def extract_text_from_image(image):
     try:
-        # Convert PIL Image to bytes
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
-
-        # Initialize Google Cloud Vision client
-        client = vision.ImageAnnotatorClient()
+        # Convert PIL Image to numpy array
+        img_array = np.array(image)
         
-        # Create image object
-        image = vision.Image(content=img_byte_arr)
+        # Convert to grayscale
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
         
-        # Perform text detection
-        response = client.text_detection(image=image)
-        texts = response.text_annotations
+        # Apply adaptive thresholding
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
         
-        if texts:
-            return texts[0].description
-        return ""
+        # Denoise
+        denoised = cv2.fastNlMeansDenoising(binary)
+        
+        # Increase contrast
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
+        
+        # Extract text using Tesseract
+        text = pytesseract.image_to_string(enhanced)
+        
+        if not text.strip():
+            # Try with original image if enhanced version fails
+            text = pytesseract.image_to_string(image)
+        
+        return text.strip()
         
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
