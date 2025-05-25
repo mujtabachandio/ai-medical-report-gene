@@ -3,7 +3,7 @@
 
 import streamlit as st
 import fitz  # PyMuPDF
-from paddleocr import PaddleOCR
+import pytesseract
 import os
 from PIL import Image
 import numpy as np
@@ -346,12 +346,11 @@ st.markdown("""
 # Add file uploader with custom styling
 uploaded_file = st.file_uploader("", type=["png", "jpg", "jpeg", "pdf"])
 
-# Initialize PaddleOCR
-@st.cache_resource
-def get_ocr():
-    return PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+# Configure Tesseract path for Streamlit Cloud
+if os.path.exists('/usr/bin/tesseract'):
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-# Extract text from image using PaddleOCR
+# Extract text from image using Tesseract with fallback options
 def extract_text_from_image(image):
     try:
         # Convert PIL Image to numpy array
@@ -363,34 +362,34 @@ def extract_text_from_image(image):
         else:
             gray = img_array
         
-        # Apply adaptive thresholding
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 11, 2
-        )
+        # Try different preprocessing methods
+        methods = [
+            lambda img: img,  # Original image
+            lambda img: cv2.adaptiveThreshold(
+                cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if len(img.shape) == 3 else img,
+                255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            ),  # Adaptive thresholding
+            lambda img: cv2.threshold(
+                cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if len(img.shape) == 3 else img,
+                0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+            )[1],  # Otsu's thresholding
+        ]
         
-        # Denoise
-        denoised = cv2.fastNlMeansDenoising(binary)
+        best_text = ""
+        for method in methods:
+            try:
+                processed_img = method(img_array)
+                text = pytesseract.image_to_string(processed_img)
+                if len(text.strip()) > len(best_text.strip()):
+                    best_text = text
+            except Exception:
+                continue
         
-        # Increase contrast
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(gray)
-        
-        # Get OCR
-        ocr = get_ocr()
-        
-        # Extract text using PaddleOCR
-        results = ocr.ocr(enhanced, cls=True)
-        
-        # Combine all detected text
-        text = ' '.join([line[1][0] for result in results for line in result])
-        
-        if not text.strip():
-            # Try with original image if enhanced version fails
-            results = ocr.ocr(img_array, cls=True)
-            text = ' '.join([line[1][0] for result in results for line in result])
-        
-        return text.strip()
+        if not best_text.strip():
+            st.warning("No text could be extracted. Please ensure the image is clear and readable.")
+            return ""
+            
+        return best_text.strip()
         
     except Exception as e:
         st.error(f"Error during text extraction: {str(e)}")
