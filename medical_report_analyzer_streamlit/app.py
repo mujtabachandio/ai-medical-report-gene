@@ -17,12 +17,38 @@ from dotenv import load_dotenv
 from datetime import datetime
 import io
 from google.cloud import vision
+import json
 
 # Set page config
 st.set_page_config(page_title="Medical Report AI Assistant", layout="wide")
 
 # Load environment variables
 load_dotenv()
+
+# Configure Google Cloud credentials
+def configure_google_cloud():
+    try:
+        # Get credentials from Streamlit secrets
+        credentials_json = st.secrets["GOOGLE_APPLICATION_CREDENTIALS"]
+        
+        # Create a temporary file for credentials
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
+            json.dump(credentials_json, temp_file)
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
+        
+        return True
+    except Exception as e:
+        st.error(f"""
+        Google Cloud credentials not found. Please follow these steps:
+        1. Go to Google Cloud Console
+        2. Create a service account and download the JSON key
+        3. In Streamlit Cloud, go to your app settings
+        4. Add a new secret with key 'GOOGLE_APPLICATION_CREDENTIALS'
+        5. Paste the entire JSON content as the value
+        6. Restart the app
+        """)
+        st.error(f"Error: {str(e)}")
+        return False
 
 # Add custom CSS 
 st.markdown("""
@@ -352,6 +378,10 @@ if os.path.exists('/usr/bin/tesseract'):
 # Extract text from image using Google Cloud Vision
 def extract_text_from_image(image):
     try:
+        # Configure Google Cloud credentials
+        if not configure_google_cloud():
+            return ""
+        
         # Convert PIL Image to numpy array
         img_array = np.array(image)
         
