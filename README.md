@@ -1,4 +1,4 @@
-# Medical Report Analyzer
+# Ai Medical Report Analyzer
 
 An AI-powered web application that analyzes medical reports using OCR and Generative AI to provide detailed explanations, risk assessments, and lifestyle suggestions.
 
