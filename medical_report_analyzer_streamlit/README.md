@@ -1,68 +1,30 @@
-# Medical Report Analyzer
+# Ai Medical Report Analyzer
 
-An advanced AI-powered application that analyzes medical lab reports, extracts test results, and provides intelligent insights using computer vision and natural language processing.
+An AI-powered web application that analyzes medical reports using OCR and Generative AI to provide detailed explanations, risk assessments, and lifestyle suggestions.
 
 ## Features
 
-- 📄 **Multi-format Support**: Upload PDF or image files of medical reports
-- 🔍 **Intelligent Analysis**: Extracts and analyzes lab test results
-- 📊 **Visual Analytics**: Interactive charts and graphs of test results
-- ⚠️ **Risk Assessment**: Identifies critical and abnormal values
-- 📈 **Trend Analysis**: Tracks changes in test values over time
-- 📱 **Responsive Design**: Works on desktop and mobile devices
-- 🔒 **Privacy-Focused**: Processes data locally, no data storage
+- **Document Processing**
+  - Upload medical reports in PDF or image formats
+  - OCR (Optical Character Recognition) for text extraction
+  - Support for both scanned documents and digital files
 
-## Prerequisites
+- **AI-Powered Analysis**
+  - Detailed explanations of medical test results
+  - Risk assessment and categorization
+  - Personalized lifestyle suggestions
+  - Normal range comparisons
 
-- Python 3.9 or higher
-- Tesseract OCR engine
-- Google API key (for advanced analysis)
+- **User-Friendly Interface**
+  - Modern, responsive design
+  - Interactive data visualization
+  - Real-time processing feedback
+  - Dark mode interface
 
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/medical-report-analyzer.git
-cd medical-report-analyzer
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv .venv
-# On Windows
-.venv\Scripts\activate
-# On Unix or MacOS
-source .venv/bin/activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Install Tesseract OCR:
-- **Windows**: Download and install from [Tesseract GitHub](https://github.com/UB-Mannheim/tesseract/wiki)
-- **MacOS**: `brew install tesseract`
-- **Linux**: `sudo apt-get install tesseract-ocr`
-
-5. Set up environment variables:
-Create a `.env` file in the project root:
-```
-GOOGLE_API_KEY=your_api_key_here
-```
-
-## Usage
-
-1. Start the application:
-```bash
-streamlit run app.py
-```
-
-2. Open your browser and navigate to `http://localhost:8501`
-
-3. Upload your medical report (PDF or image)
-
-4. View the analysis results and insights
+- **Export Capabilities**
+  - Generate comprehensive PDF reports
+  - Download analysis results
+  - Share findings with healthcare providers
 
 ## Project Structure
 
@@ -70,69 +32,33 @@ streamlit run app.py
 medical_report_analyzer_streamlit/
 ├── app.py                 # Main application file
 ├── requirements.txt       # Python dependencies
-├── streamlit.toml        # Streamlit configuration
-├── .env                  # Environment variables
-└── README.md            # Project documentation
+├── packages.txt          # System dependencies
+├── create_test_image.py  # Test image generation
+├── sample_report.txt     # Sample medical report
+├── test_app.py          # Unit tests
+└── .streamlit/          # Streamlit configuration
 ```
 
-## Key Technologies
+## Dependencies
 
-- **Streamlit**: Web application framework
-- **OpenCV**: Image processing
-- **Tesseract**: OCR (Optical Character Recognition)
-- **Google Generative AI**: Advanced text analysis
-- **Pandas**: Data manipulation and analysis
-- **Plotly**: Interactive visualizations
+- **Core Dependencies**
+  - streamlit==1.31.1
+  - opencv-python==4.8.1.78
+  - pytesseract==0.3.10
+  - google-generativeai==0.3.2
+  - python-dotenv==1.0.0
 
-## Supported Test Types
+- **PDF Processing**
+  - pypdf2==3.0.1
+  - pdf2image==1.16.3
+  - reportlab==4.0.9
 
-- Complete Blood Count (CBC)
-- Lipid Profile
-- Liver Function Tests
-- Kidney Function Tests
-- Thyroid Function Tests
-- And more...
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+- **Image Processing**
+  - numpy==1.26.2
+  - pillow==10.1.0
 
 ## Acknowledgments
 
-- Streamlit team for the amazing framework
-- Google for the Generative AI API
-- Tesseract OCR community
-
-## Support
-
-For support, please open an issue in the GitHub repository or contact the maintainers.
-
-## Roadmap
-
-- [ ] Add support for more test types
-- [ ] Implement machine learning for better analysis
-- [ ] Add multi-language support
-- [ ] Create mobile app version
-- [ ] Add batch processing capability
-
-## Security
-
-- All processing is done locally
-- No data is stored on servers
-- Secure file handling
-- Input validation and sanitization
-
-## Performance
-
-- Optimized image processing
-- Cached results for faster analysis
-- Efficient memory management
-- Responsive UI design 
+- Google Gemini Pro for AI capabilities
+- Tesseract OCR for text extraction
+- Streamlit for the web interface framework
